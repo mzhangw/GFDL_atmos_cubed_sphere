@@ -570,8 +570,9 @@ contains
 
 !--- read in the number of tracers in the NCEP NGGPS ICs
       call read_data ('INPUT/'//trim(fn_gfs_ctl), 'ntrac', ntrac, no_domain=.TRUE.)
-      if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_nggps_ic: more NGGPS tracers &
-                                 &than defined in field_table '//trim(fn_gfs_ctl)//' for NGGPS IC')
+!mzhang: not in FA
+!      if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_nggps_ic: more NGGPS tracers &
+!                                 &than defined in field_table '//trim(fn_gfs_ctl)//' for NGGPS IC')
 
 !
       call get_data_source(source,Atm%flagstruct%regional)

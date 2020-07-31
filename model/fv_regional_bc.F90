@@ -137,6 +137,7 @@ module fv_regional_mod
                      ,o3mr_index                                       &   !    in the tracers
                      ,rain_water_index                                 &   !    array.
                      ,snow_water_index                                 &   !
+                     ,q_rimef_index                                     &   ! F-A MP
                      ,sphum_index                                          !<--
 !
       integer,save :: lbnd_x_tracers,lbnd_y_tracers                    &   !<-- Local lower bounds of x,y for tracer arrays
@@ -741,6 +742,7 @@ contains
       ice_water_index  = get_tracer_index(MODEL_ATMOS, 'ice_wat')
       rain_water_index = get_tracer_index(MODEL_ATMOS, 'rainwat')
       snow_water_index = get_tracer_index(MODEL_ATMOS, 'snowwat')
+      q_rimef_index     = get_tracer_index(MODEL_ATMOS, 'q_rimef')
       graupel_index    = get_tracer_index(MODEL_ATMOS, 'graupel')
       cld_amt_index    = get_tracer_index(MODEL_ATMOS, 'cld_amt')
       o3mr_index       = get_tracer_index(MODEL_ATMOS, 'o3mr')
@@ -3437,6 +3439,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !!! High-precision
   integer i,ie,is,j,je,js,k,l,m, k2,iq
   integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+!mzhang
+  integer q_rimef
 !
 !---------------------------------------------------------------------------------
 !
@@ -3445,6 +3449,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   ice_wat = ice_water_index
   rainwat = rain_water_index
   snowwat = snow_water_index
+  q_rimef = q_rimef_index
   graupel = graupel_index
   cld_amt = cld_amt_index
   o3mr    = o3mr_index
@@ -3745,6 +3750,51 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
       enddo
    endif
+!zhang nwat=4
+   if ( Atm%flagstruct%nwat .eq. 4 ) then
+      do k=1,npz
+         do i=is,ie
+            qn1(i,k) = BC_side%q_BC(i,j,k,liq_wat)
+            BC_side%q_BC(i,j,k,rainwat) = 0.
+            BC_side%q_BC(i,j,k,q_rimef) = 0.
+            BC_side%q_BC(i,j,k,snowwat) = 0.
+            BC_side%q_BC(i,j,k,graupel) = 0.
+            if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
+               BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
+               BC_side%q_BC(i,j,k,ice_wat) = 0.
+#ifdef ORIG_CLOUDS_PART
+            else if ( BC_side%pt_BC(i,j,k) < 258.16 ) then  ! < -15C all ice_wat
+               BC_side%q_BC(i,j,k,liq_wat) = 0.
+               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
+            else                                     ! between -15~0C: linear interpolation
+               BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-258.16)/15.)
+               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
+            endif
+#else
+            else if ( BC_side%pt_BC(i,j,k) < 233.16 ) then  ! < -40C all ice_wat
+               BC_side%q_BC(i,j,k,liq_wat) = 0.
+               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
+            else
+               if ( k.eq.1 ) then  ! between [-40,0]: linear interpolation
+                  BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-233.16)/40.)
+                  BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
+               else
+                 if (BC_side%pt_BC(i,j,k)<258.16 .and. BC_side%q_BC(i,j,k-1,ice_wat)>1.e-5 ) then
+                    BC_side%q_BC(i,j,k,liq_wat) = 0.
+                    BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
+                 else  ! between [-40,0]: linear interpolation
+                    BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-233.16)/40.)
+                    BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
+                 endif
+               endif
+            endif
+#endif
+            call mp_auto_conversion_fa(BC_side%q_BC(i,j,k,liq_wat), BC_side%q_BC(i,j,k,rainwat),  &
+                                    BC_side%q_BC(i,j,k,ice_wat), BC_side%q_BC(i,j,k,snowwat) )
+         enddo
+      enddo                                                                                                                                                
+   endif                                   
+!zhang
   endif ! data source /= FV3GFS GAUSSIAN NEMSIO FILE
 !
 ! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
@@ -5328,6 +5378,26 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
  end subroutine mp_auto_conversion
 
+!zhang the version for F-A
+ subroutine mp_auto_conversion_fa(ql, qr, qi, qs)
+ real, intent(inout):: ql, qr, qi, qs
+ real, parameter:: qi0_max = 2.0e-3
+ real, parameter:: ql0_max = 2.5e-3
+
+! Convert excess cloud water into rain:
+  if ( ql > ql0_max ) then
+       qr = ql - ql0_max
+       ql = ql0_max
+  endif
+! Convert excess cloud ice into snow:
+!  if ( qi > qi0_max ) then
+!       qs = qi - qi0_max
+!       qi = qi0_max
+!  endif
+
+ end subroutine mp_auto_conversion_fa
+
+
 !-----------------------------------------------------------------------
 !
       subroutine nudge_qv_bc(Atm,isd,ied,jsd,jed)
@@ -6657,6 +6727,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
   integer :: k, j, i, iq, is, ie, js, je
   integer :: liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+!mzhang
+  integer :: q_rimef
   real    :: qt, wt, m_fac
 
    is=lbound(BC_side%delp_BC,1)
@@ -6668,6 +6740,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
    ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
    rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
    snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+   q_rimef = get_tracer_index(MODEL_ATMOS, 'q_rimef')
    graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
    cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 !
@@ -6684,6 +6757,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                        BC_side%q_BC(i,j,k,rainwat) + &
                        BC_side%q_BC(i,j,k,snowwat) + &
                        BC_side%q_BC(i,j,k,graupel))
+!zhang nwat =4
+       else if ( nwat == 4 ) then
+         qt = wt*(1. + BC_side%q_BC(i,j,k,liq_wat) + &
+                       BC_side%q_BC(i,j,k,ice_wat) + &
+                       BC_side%q_BC(i,j,k,rainwat))
        else   ! all other values of nwat
          qt = wt*(1. + sum(BC_side%q_BC(i,j,k,2:nwat)))
        endif
@@ -6706,6 +6784,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                        BC_side%q_BC(i,j,k,rainwat) + &
                        BC_side%q_BC(i,j,k,snowwat) + &
                        BC_side%q_BC(i,j,k,graupel))
+!zhang nwat=4
+       else if ( nwat == 4 ) then
+         qt = wt*(1. + BC_side%q_BC(i,j,k,liq_wat) + &
+                       BC_side%q_BC(i,j,k,ice_wat) + &
+                       BC_side%q_BC(i,j,k,rainwat)) 
        else   ! all other values of nwat
          qt = wt*(1. + sum(BC_side%q_BC(i,j,k,2:nwat)))
        endif
