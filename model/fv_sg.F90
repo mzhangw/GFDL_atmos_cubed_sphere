@@ -1945,8 +1945,8 @@ contains
  real,    intent(in):: peln(is:ie,kbot+1,js:je)           !< ln(pe)
  logical, intent(in), OPTIONAL :: check_negative
  real,    intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
-                                 pt, qv, ql, qr, qi, qs
- real, intent(inout), OPTIONAL, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa
+                                 pt, qv, ql, qr, qi
+ real, intent(inout), OPTIONAL, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa,qs
 ! Local:
  logical:: sat_adj = .false.
  real, parameter :: t48 = tice - 48.
@@ -1965,7 +1965,9 @@ contains
       call prt_negative('liq_wat', ql, is, ie, js, je, ng, kbot, -1.e-7)
       call prt_negative('rainwat', qr, is, ie, js, je, ng, kbot, -1.e-7)
       call prt_negative('ice_wat', qi, is, ie, js, je, ng, kbot, -1.e-7)
-      call prt_negative('snowwat', qs, is, ie, js, je, ng, kbot, -1.e-7)
+      if (present(qs)) then
+         call prt_negative('snowwat', qs, is, ie, js, je, ng, kbot, -1.e-7)
+      endif
     endif
   endif
 
@@ -1986,7 +1988,9 @@ contains
         qv2(i,j) = qv(i,j,k)
         ql2(i,j) = ql(i,j,k)
         qi2(i,j) = qi(i,j,k)
-        qs2(i,j) = qs(i,j,k)
+        if (present(qs)) then
+           qs2(i,j) = qs(i,j,k)
+        endif
         qr2(i,j) = qr(i,j,k)
         dp2(i,j) = dp(i,j,k)
         pt2(i,j) = pt(i,j,k)
@@ -1998,7 +2002,11 @@ contains
           do i=is, ie
              p2(i,j) = dp2(i,j)/(peln(i,k+1,j)-peln(i,k,j))
              q_liq = max(0., ql2(i,j) + qr2(i,j))
-             q_sol = max(0., qi2(i,j) + qs2(i,j))
+             if (present(qs)) then
+                 q_sol = max(0., qi2(i,j) + qs2(i,j))
+             else
+                 q_sol = max(0., qi2(i,j) ) 
+             endif
              oneocpm = 1.0 / ((1.-(qv2(i,j)+q_liq+q_sol))*cp_air + qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice)
              lcpk(i,j) = hlv * oneocpm
              icpk(i,j) = hlf * oneocpm
@@ -2009,7 +2017,11 @@ contains
           do i=is, ie
              p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
              q_liq = max(0., ql2(i,j) + qr2(i,j))
-             q_sol = max(0., qi2(i,j) + qs2(i,j))
+             if (present(qs)) then
+                 q_sol = max(0., qi2(i,j) + qs2(i,j))
+             else
+                 q_sol = max(0., qi2(i,j) )     
+             endif
              oneocpm = 1.0 / ((1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice)
              lcpk(i,j) = (lv00+d0_vap*pt2(i,j)) * oneocpm
              icpk(i,j) = (Li0+dc_ice*pt2(i,j))  * oneocpm
@@ -2023,18 +2035,26 @@ contains
 !-----------
    do j=js, je
       do i=is, ie
-        qsum = qi2(i,j) + qs2(i,j)
+        if (present(qs)) then
+           qsum = qi2(i,j) + qs2(i,j)
+        else
+           qsum = qi2(i,j)
+        endif
         if ( qsum > 0. ) then
           if ( qi2(i,j) < 0. ) then
                qi2(i,j) = 0.
-               qs2(i,j) = qsum
+               if(present(qs)) then 
+                   qs2(i,j) = qsum
+               endif
           elseif ( qs2(i,j) < 0. ) then
                qs2(i,j) = 0.
                qi2(i,j) = qsum
           endif
         else
           qi2(i,j) = 0.
+          if(present(qs))  then
           qs2(i,j) = qsum
+          endif
 
 ! If qsum is negative then borrow from rain water: phase change
           if ( qs2(i,j) < 0. .and. qr2(i,j) > 0. ) then
@@ -2076,10 +2096,18 @@ contains
           qr2(i,j) = qsum     ! rain water is still negative
           if ( qr(i,j,k) < 0. ) then
 ! fill negative rain with available qi & qs (cooling)
-             dq = min( qi2(i,j)+qs2(i,j), -qr2(i,j) )
+             if (present(qs)) then
+               dq = min( qi2(i,j)+qs2(i,j), -qr2(i,j) )
+             else
+               dq = min( qi2(i,j), -qr2(i,j) ) 
+             endif
              qr2(i,j) = qr2(i,j) + dq
-             dq1      = min( dq, qs2(i,j) )
-             qs2(i,j) = qs2(i,j) - dq1
+             if (present(qs)) then
+                dq1      = min( dq, qs2(i,j) )
+                qs2(i,j) = qs2(i,j) - dq1
+             else
+                dq1      = dq
+             endif
              qi2(i,j) = qi2(i,j) + dq1 - dq 
              pt2(i,j) = pt2(i,j) - dq*icpk(i,j)
           endif
@@ -2138,7 +2166,9 @@ contains
         qv(i,j,k) = qv2(i,j)
         ql(i,j,k) = ql2(i,j)
         qi(i,j,k) = qi2(i,j)
+        if (present(qs)) then
         qs(i,j,k) = qs2(i,j)
+        endif
         qr(i,j,k) = qr2(i,j)
         pt(i,j,k) = pt2(i,j)
      enddo
