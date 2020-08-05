@@ -232,7 +232,8 @@ contains
   integer:: i,j,k
   integer:: kdelz
 #ifdef CCPP
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, ccn_cm3, iq, n, kp, k_next
+  integer :: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, ccn_cm3, iq, n, kp, k_next
+  integer :: q_rimef ! HWRF
   integer :: ierr
 #else
   integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, ccn_cm3,  iq, n, kmp, kp, k_next
@@ -255,6 +256,7 @@ contains
        graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
        cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
        ccn_cm3 = get_tracer_index (MODEL_ATMOS, 'ccn_cm3')
+       q_rimef = get_tracer_index (MODEL_ATMOS, 'q_rimef')
 
        if ( do_adiabatic_init .or. do_sat_adj ) then
             fast_mp_consv = (.not.do_adiabatic_init) .and. consv>consv_min
@@ -630,7 +632,7 @@ contains
 #if defined(CCPP) && defined(__GFORTRAN__)
 !$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,     &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
-!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
+!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,q_rimef,      &
 !$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
@@ -645,7 +647,7 @@ contains
 #elif defined(CCPP)
 !$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
-!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
+!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat, q_rimef,     &
 !$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
@@ -661,7 +663,7 @@ contains
 #else
 !$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln,adiabatic, &
-!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,       &
+!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,q_rimef,   &
 !$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv, &
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,        &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,      &
@@ -896,6 +898,17 @@ endif        ! end last_step check
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / ((1.+r_vir*qv(i))*(1.-gz(i)))
 #endif
                  enddo
+!HWRF
+              elseif ( nwat==4 ) then
+                 do i=is,ie
+                    gz(i) = q(i,j,k,liq_wat)+q(i,j,k,rainwat)+q(i,j,k,ice_wat)
+#ifdef MULTI_GASES
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/ virq(q(i,j,k,1:num_gas))
+#else
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
+#endif
+                 enddo
+!HWRF
               elseif ( nwat==6 ) then
                  do i=is,ie
                     gz(i) = q(i,j,k,liq_wat)+q(i,j,k,rainwat)+q(i,j,k,ice_wat)+q(i,j,k,snowwat)+q(i,j,k,graupel)
@@ -3595,15 +3608,6 @@ endif        ! end last_step check
      enddo
   case(4)    ! K_warm_rain scheme with fake ice
      do i=is,ie
-#ifndef CCPP
-        qv(i) = q(i,j,k,sphum)
-        qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
-#ifdef MULTI_GASES
-        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + qd(i)*c_liq
-#else
-        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + qd(i)*c_liq
-#endif
-#else
        qv(i) = q(i,j,k,sphum)
        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
        qs(i) = q(i,j,k,ice_wat)
@@ -3612,9 +3616,6 @@ endif        ! end last_step check
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #else
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
-#endif
-
-    
 #endif
      enddo
   case(5)
