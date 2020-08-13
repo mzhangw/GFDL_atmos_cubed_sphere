@@ -3757,8 +3757,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             qn1(i,k) = BC_side%q_BC(i,j,k,liq_wat)
             BC_side%q_BC(i,j,k,rainwat) = 0.
             BC_side%q_BC(i,j,k,q_rimef) = 0.
-            BC_side%q_BC(i,j,k,snowwat) = 0.
-            BC_side%q_BC(i,j,k,graupel) = 0.
+            !BC_side%q_BC(i,j,k,snowwat) = 0.
+            !BC_side%q_BC(i,j,k,graupel) = 0.
             if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
                BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
                BC_side%q_BC(i,j,k,ice_wat) = 0.
@@ -3789,8 +3789,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                endif
             endif
 #endif
-            call mp_auto_conversion_fa(BC_side%q_BC(i,j,k,liq_wat), BC_side%q_BC(i,j,k,rainwat),  &
-                                    BC_side%q_BC(i,j,k,ice_wat), BC_side%q_BC(i,j,k,snowwat) )
+            call mp_auto_conversion_fa(BC_side%q_BC(i,j,k,liq_wat), BC_side%q_BC(i,j,k,rainwat))
          enddo
       enddo                                                                                                                                                
    endif                                   
@@ -5379,9 +5378,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
  end subroutine mp_auto_conversion
 
 !zhang the version for F-A
- subroutine mp_auto_conversion_fa(ql, qr, qi, qs)
- real, intent(inout):: ql, qr, qi, qs
- real, parameter:: qi0_max = 2.0e-3
+ subroutine mp_auto_conversion_fa(ql, qr)
+ real, intent(inout):: ql, qr
  real, parameter:: ql0_max = 2.5e-3
 
 ! Convert excess cloud water into rain:
@@ -5389,11 +5387,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
        qr = ql - ql0_max
        ql = ql0_max
   endif
-! Convert excess cloud ice into snow:
-!  if ( qi > qi0_max ) then
-!       qs = qi - qi0_max
-!       qi = qi0_max
-!  endif
 
  end subroutine mp_auto_conversion_fa
 

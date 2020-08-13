@@ -181,6 +181,7 @@ module fv_diagnostics_mod
  logical :: prt_minmax =.false.
  logical :: m_calendar
  integer  sphum, liq_wat, ice_wat, cld_amt    ! GFDL physics
+ integer  q_rimef       ! HWRF
  integer  rainwat, snowwat, graupel, o3mr
  integer :: istep, mp_top
  real    :: ptop
@@ -297,6 +298,7 @@ contains
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    q_rimef = get_tracer_index (MODEL_ATMOS, 'q_rimef')
     o3mr    = get_tracer_index (MODEL_ATMOS, 'o3mr')
     cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
@@ -2739,6 +2741,17 @@ contains
              enddo
              enddo
           endif
+!HWRF
+!          if (q_rimef > 0) then
+!!$OMP parallel do default(shared)
+!             do k=1,npz
+!             do j=jsc,jec
+!             do i=isc,iec
+!                wk(i,j,k) = wk(i,j,k) + Atm(n)%q(i,j,k,q_rimef)*Atm(n)%delp(i,j,k)
+!             enddo
+!             enddo
+!             enddo
+!          endif
           if (graupel > 0) then
 !$OMP parallel do default(shared)
              do k=1,npz
@@ -3512,6 +3525,22 @@ contains
              enddo
           enddo
           call prt_gb_nh_sh('Max_cld GB_NH_SH_EQ',isc,iec, jsc,jec, a2, Atm(n)%gridstruct%area_64(isc:iec,jsc:jec),   &
+                            Atm(n)%gridstruct%agrid_64(isc:iec,jsc:jec,2))
+        endif
+      endif
+
+!HWRF: q_rimef
+      if ( .not. Atm(n)%gridstruct%bounded_domain )  then
+        if ( q_rimef > 0 .and. prt_minmax ) then
+          a2(:,:) = 0.
+          do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                a2(i,j) =  max(a2(i,j), Atm(n)%q(i,j,k,q_rimef) )
+             enddo
+             enddo
+          enddo
+          call prt_gb_nh_sh('q_rimef GB_NH_SH_EQ',isc,iec, jsc,jec, a2, Atm(n)%gridstruct%area_64(isc:iec,jsc:jec),   &
                             Atm(n)%gridstruct%agrid_64(isc:iec,jsc:jec,2))
         endif
       endif

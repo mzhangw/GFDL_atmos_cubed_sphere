@@ -123,6 +123,7 @@ module fv_nggps_diags_mod
  logical :: use_wrtgridcomp_output=.false.
  integer :: sphum, liq_wat, ice_wat       !< GFDL physics
  integer :: rainwat, snowwat, graupel
+ integer :: q_rimef    ! HWRF
  real :: vrange(2) = (/ -330.,  330. /)  !< winds
  real :: wrange(2) = (/ -100.,  100. /)  !< vertical wind
  real :: trange(2) = (/  100.,  350. /)  !< temperature
@@ -174,6 +175,7 @@ contains
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    q_rimef = get_tracer_index (MODEL_ATMOS, 'q_rimef')
 
 !--------------------------------------------------------------
 ! Register main prognostic fields: ps, (u,v), t, omega (dp/dt)

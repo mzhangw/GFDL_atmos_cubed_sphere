@@ -244,6 +244,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
   integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  ! condensate species tracer indices
+  integer :: q_rimef
 #ifdef CCPP
   integer :: cld_amt
 #endif
@@ -356,6 +357,7 @@ contains
    graupel = get_tracer_index (MODEL_ATMOS, 'graupel' )
 #ifdef CCPP
    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+   q_rimef = get_tracer_index (MODEL_ATMOS, 'q_rimef')
 #endif
 
    if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel) > Atm(mygrid)%flagstruct%nwat) then
@@ -446,7 +448,7 @@ contains
                                  Atm(mygrid)%npz, Atm(mygrid)%ng,                                              &
                                  dt_atmos, p_split, Atm(mygrid)%flagstruct%k_split,                            &
                                  zvir, Atm(mygrid)%flagstruct%p_ref, Atm(mygrid)%ak, Atm(mygrid)%bk,           &
-                                 liq_wat>0, ice_wat>0, rainwat>0, snowwat>0, graupel>0,                        &
+                                 liq_wat>0, ice_wat>0, rainwat>0, snowwat>0, graupel>0, q_rimef>0,             &
                                  cld_amt>0, kappa, Atm(mygrid)%flagstruct%hydrostatic,                         &
                                  Atm(mygrid)%flagstruct%do_sat_adj,                                            &
                                  Atm(mygrid)%delp, Atm(mygrid)%delz, Atm(mygrid)%gridstruct%area_64,           &
@@ -459,6 +461,7 @@ contains
                                  Atm(mygrid)%q(:,:,:,sphum), Atm(mygrid)%q(:,:,:,liq_wat),                     &
                                  Atm(mygrid)%q(:,:,:,ice_wat), Atm(mygrid)%q(:,:,:,rainwat),                   &
                                  Atm(mygrid)%q(:,:,:,snowwat), Atm(mygrid)%q(:,:,:,graupel),                   &
+                                 Atm(mygrid)%q(:,:,:,q_rimef),                                                 &
                                  Atm(mygrid)%q(:,:,:,cld_amt), Atm(mygrid)%q_con, nthreads,                    &
                                  Atm(mygrid)%flagstruct%nwat,                                                  &
 #ifdef MULTI_GASES
@@ -1459,7 +1462,7 @@ contains
 #ifdef MULTI_GASES
 !$OMP                      num_gas,                                                      &
 #endif
-!$OMP                      snowwat, graupel, nq_adv, flip_vc)   &
+!$OMP                      snowwat, graupel, q_rimef, nq_adv, flip_vc)   &
 !$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt, tracer_name)
    do nb = 1,Atm_block%nblks
 
@@ -1960,7 +1963,7 @@ contains
 !---------------------------------------------------------------------
 !$OMP parallel do default (none) & 
 !$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
-!$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
+!$OMP                      ice_wat, rainwat, snowwat, graupel, q_rimef, pk0inv, ptop,   &
 !$OMP                      pktop, zvir, mygrid, dnats, nq_adv, flip_vc) &
 #ifdef MULTI_GASES
 
@@ -2030,6 +2033,12 @@ contains
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,rainwat)   &
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,snowwat)   &
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,graupel)
+!HWRF
+         elseif ( Atm(mygrid)%flagstruct%nwat == 4 ) then
+            IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k)           &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,liq_wat)   &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,ice_wat)   &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,rainwat) 
          else !variable condensate numbers
             IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
                                             - sum(IPD_Data(nb)%Statein%qgrs(ix,k,2:Atm(mygrid)%flagstruct%nwat))   
@@ -2140,6 +2149,7 @@ contains
 
    integer  sphum, liq_wat, ice_wat        ! GFDL AM physics
    integer  rainwat, snowwat, graupel      ! GFDL Cloud Microphysics
+   integer  q_rimef
 
    sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
    liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
@@ -2147,6 +2157,7 @@ contains
    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
    graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+   q_rimef = get_tracer_index (MODEL_ATMOS, 'q_rimef')
 
    if (begin) then
       if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = q(isc:iec,jsc:jec,:,sphum)
